@@ -1,0 +1,37 @@
+# ───────────────────────────────────────────────────────────────────────────
+# PRIVACY FIRST. This repo ships LOGIC ONLY. Your financial data never gets
+# committed. If you add a new place for statements, add it here too.
+# ───────────────────────────────────────────────────────────────────────────
+
+# Your local config — contains your names, amounts, and personal-name tokens.
+/config.py
+
+# Your real statement folders (drop bank/card exports here).
+/data/*
+!/data/.gitkeep
+
+# Generated output — reports and the intermediate CSV contain real figures.
+/output/*
+!/output/.gitkeep
+/report.html
+
+# ── Defense in depth ───────────────────────────────────────────────────────
+# Refuse to commit raw statements ANYWHERE in the tree, regardless of folder.
+# The only exception is the curated, synthetic sample-data/ used for the demo.
+*.pdf
+*.xlsx
+*.xls
+*.csv
+!sample-data/**
+
+# Legacy / scratch working dir (not part of the published template).
+/_workspace/
+
+# Python / editor / OS cruft
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.idea/
+.vscode/
+.DS_Store
