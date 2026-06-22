@@ -12,37 +12,56 @@ never is.**
 
 - Real values live in **`config.py`** (gitignored). The committed template is
   `config.example.py` — it must stay free of real names, amounts, and tokens.
-- Statements live in **`data/`** (gitignored) or wherever `config.py` points.
-- Generated reports + the intermediate CSV go to **`output/`** (gitignored).
+- Moneytor JWTs live in **`.env`** (gitignored). Never echo, paste, or commit them.
+- Snapshots, decisions, and residue go to **`output/`** (gitignored).
 - `.gitignore` also refuses *any* `.pdf/.xlsx/.csv` outside `sample-data/`.
-- Before any `git add`/commit, run `git status` and confirm no statement,
-  no `config.py`, no `output/` file, and no real name/amount is staged.
+- `python3 engine/refresh.py --preflight` is the automated Rule Zero gate — it
+  checks `.env` is gitignored and scans tracked files for JWT-shaped tokens.
+  Always run it before `--pull`.
+- Before any `git add`/commit, run `git status` and confirm no snapshot,
+  no `config.py`, no `.env`, no `output/` file, and no real name/amount is staged.
 - Never paste a real name, account number, salary, or merchant from someone's
   data into a committed file (code, comment, README, or sample). If you need an
   example, invent a synthetic one.
 
 If you ever notice PII in a tracked file, stop and fix it before anything else.
 
-## Architecture (3 files)
+## Architecture
 
 ```
-config.py            # ALL personal knobs: people, period, split, amounts, name tokens, file globs
-engine/analyze.py    # parse statements → normalize → classify → settlement math → calls render
-engine/render.py     # build the single-file HTML dashboard (Chart.js, dark theme)
+config.py                    # ALL personal knobs: people, period, split, amounts, name tokens, token_env refs
+engine/moneytor.py           # Moneytor API client — fetch_transactions(); the ONLY networked code besides refresh
+engine/store.py              # decisions store: load/save/put_decision; src_hash drift detection
+engine/classify_context.py   # committed RUBRIC + STATUS_VALUES + build_input/build_context
+engine/refresh.py            # local refresh CLI: --preflight, --pull [--from/--to], --record '<json>'
+engine/analyze.py            # load_all (snapshot) → classify_all (regex + store) → settlement math → render
+engine/render.py             # build the single-file HTML dashboard (Chart.js, dark theme)
 ```
 
-Pipeline: `config.py` → `analyze.load_all()` (parse every source) →
-`classify()` (tag each transaction) → aggregations + settlement math in
-`main()` → `render.build_html(**ctx)` → `output/report.html`.
+Key data files (all gitignored — never commit):
+```
+.env                         # Moneytor JWTs: MONEYTOR_TOKEN_A / MONEYTOR_TOKEN_B
+output/snapshot/<person>.json  # raw API pull per person
+output/decisions.json        # source of truth: LLM + rule verdicts keyed by owner:id
+output/residue.json          # ambiguous queue after regex first-pass
+output/report.html           # generated dashboard
+```
 
-Run it from the repo root:
+Pipeline — **pull path** (networked, run via `/refresh`):
+`config.py + .env` → `refresh.py --pull` (Moneytor API → snapshot) →
+regex first-pass → `residue.json` → LLM reasoning → `--record` each verdict →
+`python3 engine/analyze.py` → `output/report.html`.
+
+**Build path** (offline, deterministic): `python3 engine/analyze.py` — reads
+snapshot + decisions store, no network, no re-reasoning.
 
 ```bash
-python3 engine/analyze.py        # writes output/report.html + output/transactions.csv
+python3 engine/refresh.py --preflight   # Rule Zero gate — must exit 0
+python3 engine/refresh.py --pull        # fetch snapshot + write residue.json
+python3 engine/analyze.py               # build output/report.html from store
 ```
 
-Requires `python3`, `openpyxl` (`pip install openpyxl`), and `pdftotext`
-(`brew install poppler`) for PDF statements.
+Requires `python3` and `openpyxl` (`pip install openpyxl`).
 
 ## The two people
 
@@ -50,20 +69,6 @@ The engine compares **exactly two** people, with fixed internal ids
 **`person_a`** and `person_b` (used as dict keys throughout both files). In
 `config.py` you may change each person's `label` (display name) and `color`, but
 **not** the `id`. `analyze.py` asserts this on startup.
-
-## Data layout
-
-Each person has a `data_dir` containing their statements, grouped however you
-like; `config.py` `sources` point at them with globs:
-
-```
-data/person_a/
-  bank/   leumi-statement.pdf
-  cards/  isracard-2025-10.xlsx ...
-data/person_b/
-  bank/   discount-export.csv
-  cards/  ...
-```
 
 ## Classification taxonomy
 
@@ -78,20 +83,23 @@ data/person_b/
 - **loan** — loan setups & repayments (tracked, not spend)
 - **earnings**, **rental_income** — bank credits (income side)
 - **transfer** — Bit/PayBox/ATM/fees/inter-account moves (excluded from spend)
+- **refund** — card credit reversing prior spend (excluded from spend)
 - **flag** — didn't match a rule; surfaced for a human decision
 
-The rules are plain Python lists/regexes near the top of `analyze.py`
+The regex rules are plain Python lists/regexes near the top of `analyze.py`
 (`UTILITY_RULES`, `FUEL_MERCHANT_RE`, `SHARED_CATEGORIES`, `PERSONAL_CATEGORIES`,
 `BUSINESS_MERCHANT_RE`, `SHARED_MERCHANT_PATTERNS`, `AMBIGUOUS_CATEGORIES`, …).
-**Tuning these for a new user is expected work** — read their `flag` bucket in
-`output/transactions.csv`, decide each, and move merchants/categories into the
-right list. Personal names for couple-transfer / landlord / salary detection are
-NOT in the engine — they come from `config.py` token lists.
+Ambiguous transactions that escape the regex pass go into `output/residue.json`
+for one-time LLM reasoning; verdicts are persisted in `output/decisions.json`.
+Personal names for couple-transfer / landlord / salary detection are NOT in the
+engine — they come from `config.py` token lists and `.env`.
 
 ## Adding a bank or card parser
 
-The built-in parsers target Israeli formats (Isracard xlsx/pdf, Leumi pdf,
-Discount csv/pdf). To support another bank:
+The primary data path is now Moneytor (`engine/moneytor.py` + `analyze.py:map_moneytor`).
+Raw file parsers are still supported for banks not covered by Moneytor. The
+built-in parsers target Israeli formats (Isracard xlsx/pdf, Leumi pdf,
+Discount csv/pdf). To add another:
 
 1. Write `load_<bank>(path, owner, account='bank') -> list[dict]` in
    `analyze.py`, returning the normalized tx dict (see an existing loader for
@@ -108,8 +116,10 @@ the xlsx, to learn the column layout before writing the parser.
 
 There's a skill for the full interview + setup flow:
 `.claude/skills/expense-report/SKILL.md`. Use it when someone wants to set this
-up for their own statements. Specialized agents live in `.claude/agents/`
-(`statement-onboarder`, `classification-tuner`).
+up for their own Moneytor account. The `/refresh` skill (`.claude/skills/refresh/SKILL.md`)
+orchestrates pull → reason → build. Specialized agents live in `.claude/agents/`
+(`statement-onboarder` for raw file formats, `classification-reasoner` for
+reasoning over large residue batches).
 
 ## Coding style
 
