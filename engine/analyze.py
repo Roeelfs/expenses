@@ -24,6 +24,7 @@ except ModuleNotFoundError:
     _sys.modules["config"] = C
     _spec.loader.exec_module(C)
 import render
+import store as _store, classify_context as _cc
 
 assert [p.id for p in C.PEOPLE] == ['person_a', 'person_b'], \
     "config.PEOPLE must define two people with ids 'person_a' and 'person_b' (change `label`, not `id`)."
@@ -622,17 +623,20 @@ AMBIGUOUS_CATEGORIES = {
 
 # Merchant patterns that override category
 SHARED_MERCHANT_PATTERNS = [
-    re.compile(r'שופרסל|רמי לוי|יוחננוף|ויקטורי|אושר עד|חצי חינם|מגה|טיב טעם|carrefour|CARREFOUR|סופר ?פארם|super-pharm|פוקס הום|home center|הום סנטר|איקאה|IKEA', re.I),
+    re.compile(r'סופרמרקט|מכולת|שופרסל|רמי לוי|יוחננוף|ויקטורי|אושר עד|חצי חינם|מגה|טיב טעם|carrefour|CARREFOUR|סופר ?פארם|super-pharm|פוקס הום|home center|הום סנטר|איקאה|IKEA', re.I),
     re.compile(r'גוד פארם|good pharm|בי פארם|פארמה|pharm', re.I),
     re.compile(r'בינז קפה|beanz|beans coffee', re.I),  # house coffee subscription
 ]
 
-def classify(tx: dict) -> dict:
-    """Returns tx with added: tag, status (shared|personal|flag|transfer|rent), reason."""
+def classify_deterministic(tx: dict):
+    """Returns tx with added: tag, status (shared|personal|flag|transfer|rent), reason.
+    Returns None if the cascade cannot decide (residue — escalate to LLM harness)."""
     merchant = tx['merchant']
     category = tx['category']
+    if tx.get('account_kind') == 'card' and tx.get('sub_type') == 'credit':
+        return {**tx, 'tag': 'refund', 'status': 'refund', 'reason': 'card credit / refund — excluded from spend'}
     # Bank-side transactions — routed to dedicated buckets (kept out of flag/shared/personal)
-    if tx.get('source') in ('leumi-bank', 'discount-bank'):
+    if tx.get('account_kind') == 'bank':
         kind = tx.get('bank_kind')
         direction = tx.get('sub_type')
         if kind == 'landlord_rent':
@@ -672,13 +676,11 @@ def classify(tx: dict) -> dict:
             return {**tx, 'tag': 'bank_transfer_out', 'status': 'transfer', 'reason': 'bank transfer out (Bit/PayBox/digital)'}
         return {**tx, 'tag': 'bank_other', 'status': 'transfer', 'reason': 'bank debit — unclassified'}
     # Card-side rent settlement: a one-share BIT/PayBox transfer from person_a's card = rent paid to person_b
-    if RENT_AMOUNT and abs(tx['amount'] - RENT_AMOUNT) < 0.01 and (category in TRANSFER_CATEGORIES or 'BIT' in merchant.upper() or 'PAYBOX' in merchant.upper()):
+    if RENT_AMOUNT and abs(tx['amount'] - RENT_AMOUNT) < 0.01 and ('BIT' in tx.get('notes','').upper() or 'PAYBOX' in tx.get('notes','').upper() or 'BIT' in merchant.upper() or 'PAYBOX' in merchant.upper()):
         return {**tx, 'tag': 'rent_settlement', 'status': 'rent',
                 'reason': f'{CURRENCY}{RENT_AMOUNT:,.0f} BIT/transfer from card = rent settlement',
                 'sub_type': 'debit' if tx.get('owner')=='person_a' else 'credit'}
     # Transfer / cash withdrawal — exclude from spend
-    if category in TRANSFER_CATEGORIES:
-        return {**tx, 'tag': 'transfer', 'status': 'transfer', 'reason': f'category: {category}'}
     for pat in TRANSFER_MERCHANT_PATTERNS:
         if pat.search(merchant):
             return {**tx, 'tag': 'transfer', 'status': 'transfer', 'reason': 'transfer merchant'}
@@ -705,27 +707,55 @@ def classify(tx: dict) -> dict:
     if VEHICLE_MERCHANT_RE.search(merchant):
         return {**tx, 'tag': 'vehicle', 'status': 'personal', 'reason': 'vehicle merchant'}
     # Furniture / home decor — shared, but tagged for its own section
-    if FURNITURE_MERCHANT_RE.search(merchant) or category in FURNITURE_CATEGORIES:
+    if FURNITURE_MERCHANT_RE.search(merchant):
         return {**tx, 'tag': 'furniture', 'status': 'shared', 'reason': 'furniture / home decor'}
     # Shared merchant patterns (matches BEFORE restaurant so e.g. בינז קפה / IKEA win)
     for pat in SHARED_MERCHANT_PATTERNS:
         if pat.search(merchant):
             return {**tx, 'tag': 'grocery_or_household', 'status': 'shared', 'reason': 'shared merchant'}
-    # Restaurants — own bucket, not distributed
-    if category in RESTAURANT_CATEGORIES:
-        return {**tx, 'tag': 'restaurant', 'status': 'restaurant', 'reason': f'restaurant category: {category}'}
     # Vacations — own bucket, not distributed
-    if category in VACATION_CATEGORIES or VACATION_MERCHANT_RE.search(merchant):
+    if VACATION_MERCHANT_RE.search(merchant):
         return {**tx, 'tag': 'vacation', 'status': 'vacation', 'reason': 'vacation (travel/hotel/flight)'}
-    if category in SHARED_CATEGORIES:
-        return {**tx, 'tag': 'grocery', 'status': 'shared', 'reason': f'category: {category}'}
-    if category in PERSONAL_CATEGORIES:
-        return {**tx, 'tag': 'personal', 'status': 'personal', 'reason': f'category: {category}'}
-    if category in AMBIGUOUS_CATEGORIES:
-        return {**tx, 'tag': 'review', 'status': 'flag', 'reason': f'ambiguous category: {category}'}
-    if tx.get('foreign'):
-        return {**tx, 'tag': 'foreign', 'status': 'flag', 'reason': 'foreign transaction'}
-    return {**tx, 'tag': 'other', 'status': 'flag', 'reason': 'uncategorized'}
+    return None  # residue — re-grounded cascade can't decide; escalate to the LLM harness
+
+TAG_LABELS = {
+    'grocery_or_household': 'מכולת/בית', 'grocery': 'מכולת', 'fuel': 'דלק', 'phone': 'תקשורת',
+    'gym': 'כושר', 'business': 'עסקי', 'subscription': 'מנויים', 'vehicle': 'רכב',
+    'furniture': 'ריהוט', 'restaurant': 'מסעדות', 'vacation': 'חופשה', 'refund': 'זיכוי',
+    'transfer': 'העברה', 'salary': 'משכורת', 'earnings': 'הכנסה', 'landlord_rent': 'שכר דירה',
+    'rent_settlement': 'התחשבנות שכ״ד', 'couple_transfer': 'העברה זוגית',
+    'non_income_credit': 'זיכוי לא-הכנסה', 'loan_payment': 'החזר הלוואה',
+    'loan_received': 'קבלת הלוואה', 'rental_income': 'הכנסה משכירות', 'bank_fee': 'עמלת בנק',
+    'cash_or_fx': 'מזומן/מט״ח', 'bank_transfer_out': 'העברה יוצאת', 'bank_other': 'בנק-אחר',
+    'utility:electric': 'חשמל', 'utility:water': 'מים', 'utility:gas': 'גז',
+    'utility:internet': 'אינטרנט', 'utility:arnona': 'ארנונה', 'utility:building': 'ועד בית',
+    'utility:rent_mortgage': 'משכנתא', 'utility:bituach_leumi': 'ביטוח לאומי',
+    'review': 'לבדיקה', 'foreign': 'חו״ל', 'other': 'אחר',
+}
+
+def display_category(tag: str) -> str:
+    return TAG_LABELS.get(tag, tag)
+
+def classify_one(tx, store, queue, *, rubric_hash, retune=False):
+    rec = _store.lookup(store, tx, rubric_hash=rubric_hash, retune=retune)
+    if rec is not None:
+        return {**tx, 'tag': rec['tag'], 'status': rec['status'],
+                'reason': rec['reason'], 'decided_by': rec['decided_by'], **rec.get('extra', {})}
+    decided = classify_deterministic(tx)
+    if decided is not None:
+        _store.put_decision(store, tx, status=decided['status'], tag=decided['tag'],
+                            reason=decided['reason'], decided_by='rule', rubric_hash=rubric_hash)
+        return {**decided, 'decided_by': 'rule'}
+    queue.append(tx)
+    return None
+
+def classify_all(txs, store, queue, *, rubric_hash, retune=False, allow_llm=True):
+    cls = []
+    for tx in txs:
+        out = classify_one(tx, store, queue, rubric_hash=rubric_hash, retune=retune)
+        if out is not None:
+            cls.append(out)
+    return cls
 
 # ─── Aggregations ────────────────────────────────────────────────────────────
 
@@ -735,7 +765,7 @@ def month_key(iso: str) -> str:
 def main():
     txs = load_all()
     print(f'Loaded {len(txs)} transactions', file=sys.stderr)
-    cls = [classify(t) for t in txs]
+    cls = [classify_deterministic(t) for t in txs]
 
     # Write CSV for inspection
     all_fields = sorted({k for t in cls for k in t.keys()})
