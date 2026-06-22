@@ -3,16 +3,21 @@ Expense-report configuration — TEMPLATE.
 
    cp config.example.py config.py     # then edit config.py with your real values
 
-`config.py` is gitignored. Your names, amounts, and the paths to your bank
-statements live ONLY in config.py and never get committed. This file
+`config.py` is gitignored. Your names, amounts, and API tokens live ONLY in
+config.py (and the gitignored .env) and never get committed. This file
 (config.example.py) ships with the repo and must stay free of personal data.
 
 Everything the engine needs to know about *you* is in this one file:
-  • who the two people are and where their statements live
+  • who the two people are and which Moneytor token env-var to use for each
   • the date window and how you split joint costs
   • a few household amounts (rent, etc.)
   • personal-name tokens used to recognise transfers between you, rent
     payments to a landlord, and salary credits
+
+Data is fetched from the Moneytor API (not local statement files). Each person
+has one Source entry whose token_env names the env var (in your .env file)
+that holds that person's Moneytor JWT. The engine reads the snapshot written to
+output/snapshot/<person.id>.json — that folder is gitignored.
 
 The classification *rules* (which merchants are groceries, fuel, utilities,
 subscriptions, …) live in engine/analyze.py — Claude tunes those for you
@@ -38,22 +43,18 @@ CURRENCY     = "₪"                 # symbol shown in the report
 # ─────────────────────────────────────────────────────────────────────────
 @dataclass
 class Source:
-    """One statement feed for a person.
+    """One ingest feed for a person (the source-adapter seam, §4.5).
 
-    kind   — which parser to use. Built-in parsers:
-               isracard_xlsx        Isracard credit-card .xlsx export
-               isracard_pdf_monthly Isracard .pdf statement, one file per
-                                    bill month named YYYY-MM.pdf
-               leumi_pdf            Bank Leumi account statement .pdf
-               discount_csv         Discount Bank .csv export (UTF-16, tab)
-               discount_pdf         Discount Bank account statement .pdf
-             Other bank? Ask Claude to add a parser — see CLAUDE.md
-             ("Adding a bank/card parser").
-    glob   — file glob RELATIVE to the person's data_dir.
-    account— optional label shown in the report (e.g. "Visa ****1234").
+    kind      — which adapter. PR1 ships 'moneytor' (the Moneytor API).
+                A future 'scraper' adapter (israeli-bank-scrapers) can be added
+                without touching anything downstream of the snapshot.
+    token_env — the NAME of the environment variable holding this person's
+                Moneytor JWT (the real token lives ONLY in the gitignored .env;
+                NEVER put the token here).
+    account   — optional label shown in the report.
     """
-    kind: str
-    glob: str
+    kind: str = "moneytor"
+    token_env: str = ""
     account: str = ""
 
 
@@ -62,7 +63,6 @@ class Person:
     id: str                          # internal, stable, no spaces (e.g. "person_a")
     label: str                       # display name in the report (e.g. "Alex")
     color: str                       # hex accent colour for this person
-    data_dir: str                    # folder holding this person's statements
     sources: list[Source] = field(default_factory=list)
 
 
@@ -71,24 +71,13 @@ PEOPLE = [
         id="person_a",
         label="Person A",
         color="#5ea2ff",
-        data_dir="sample-data/person_a",
-        sources=[
-            Source("isracard_xlsx", "cards/*.xlsx"),
-            Source("discount_csv",  "bank/*.csv"),
-            # Other built-in formats you can mix in (see Source docstring above):
-            # Source("leumi_pdf",            "bank/*.pdf"),
-            # Source("isracard_pdf_monthly", "cards/*.pdf"),   # files named YYYY-MM.pdf
-        ],
+        sources=[Source(kind="moneytor", token_env="MONEYTOR_TOKEN_PERSON_A", account="Moneytor")],
     ),
     Person(
         id="person_b",
         label="Person B",
         color="#ff7ea8",
-        data_dir="sample-data/person_b",
-        sources=[
-            Source("isracard_xlsx", "cards/*.xlsx"),
-            Source("discount_csv",  "bank/*.csv"),
-        ],
+        sources=[Source(kind="moneytor", token_env="MONEYTOR_TOKEN_PERSON_B", account="Moneytor")],
     ),
 ]
 
