@@ -22,7 +22,12 @@
 *.xlsx
 *.xls
 *.csv
-!sample-data/**
+# sample-data holds ONLY synthetic fixtures — never a real snapshot/export
+!/sample-data/generate.py
+!/sample-data/person_a/
+!/sample-data/person_b/
+!/sample-data/person_a/**
+!/sample-data/person_b/**
 
 # Legacy / scratch working dir (not part of the published template).
 /_workspace/
@@ -35,3 +40,16 @@ venv/
 .idea/
 .vscode/
 .DS_Store
+
+# ── Moneytor pivot: secrets + new financial formats (Rule Zero) ──
+/.env
+.env*
+!/.env.example
+# un-anchored: catch the new financial artifacts ANYWHERE, not just under output/
+decisions*.json
+snapshot*.json
+residue*.json
+report.html
+meta.json
+/deploy/**/*.html
+/deploy/**/*.json
