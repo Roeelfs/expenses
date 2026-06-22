@@ -1,0 +1,15 @@
+{
+  "ok": true,
+  "asOf": "2026-02-10T00:00:00.000Z",
+  "baseCurrency": "ILS",
+  "transactions": [
+    {"id": "01AAAA000000000000000GROCERY", "date": "2026-02-01", "amount": -250.50, "currency": "ILS", "description": "סופרמרקט הדוגמה", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-A1", "type": "CREDIT"},
+    {"id": "01AAAA000000000000000000FUEL", "date": "2026-02-02", "amount": -300.00, "currency": "ILS", "description": "פז דוגמה", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-A1", "type": "CREDIT"},
+    {"id": "01AAAA0000000000000000SALARY", "date": "2026-02-05", "amount": 12000.00, "currency": "ILS", "description": "salary example-employer", "extra_info": null, "category": "BANK_TRANSFER", "accountId": "BANK-A1", "type": "CHECKING"},
+    {"id": "01AAAA00000000000000000RENT", "date": "2026-02-03", "amount": -5400.00, "currency": "ILS", "description": "Landlord", "extra_info": "שיק", "category": "BANK_TRANSFER", "accountId": "BANK-A1", "type": "CHECKING"},
+    {"id": "01AAAA000000000000000COUPLE", "date": "2026-02-06", "amount": -2700.00, "currency": "ILS", "description": "Doe", "extra_info": "BIT", "category": "BANK_TRANSFER", "accountId": "BANK-A1", "type": "CHECKING"},
+    {"id": "01AAAA00000000000000REFUND", "date": "2026-02-07", "amount": 80.00, "currency": "ILS", "description": "סופרמרקט הדוגמה זיכוי", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-A1", "type": "CREDIT"},
+    {"id": "01AAAA0000000000000FOREIGN", "date": "2026-02-08", "amount": -40.00, "currency": "USD", "description": "EXAMPLE SAAS", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-A1", "type": "CREDIT"},
+    {"id": "01AAAA00000000000000ZERO", "date": "2026-02-09", "amount": 0.0, "currency": "ILS", "description": "ignore me", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-A1", "type": "CREDIT"}
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "asOf": "2026-02-10T00:00:00.000Z",
+  "baseCurrency": "ILS",
+  "transactions": [
+    {"id": "01BBBB00000000000000GROCERY", "date": "2026-02-01", "amount": -120.00, "currency": "ILS", "description": "מכולת דוגמה", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-B1", "type": "CREDIT"},
+    {"id": "01BBBB0000000000000SALARY", "date": "2026-02-05", "amount": 9000.00, "currency": "ILS", "description": "salary other-employer", "extra_info": null, "category": "BANK_TRANSFER", "accountId": "BANK-B1", "type": "CHECKING"},
+    {"id": "01AAAA000000000000000GROCERY", "date": "2026-02-01", "amount": -99.00, "currency": "ILS", "description": "מכולת אחרת", "extra_info": null, "category": "CREDIT_CARD_CHECKING", "accountId": "CARD-B1", "type": "CREDIT"}
+  ]
+}
