@@ -15,7 +15,14 @@ import openpyxl
 ROOT = Path(__file__).resolve().parent.parent          # repo root (parent of engine/)
 sys.path.insert(0, str(ROOT))                          # so `import config` works
 sys.path.insert(0, str(Path(__file__).resolve().parent))  # so `import render` works
-import config as C
+try:
+    import config as C
+except ModuleNotFoundError:
+    import importlib.util as _ilu, pathlib as _pl, sys as _sys
+    _spec = _ilu.spec_from_file_location("config", _pl.Path(__file__).resolve().parents[1] / "config.example.py")
+    C = _ilu.module_from_spec(_spec)
+    _sys.modules["config"] = C
+    _spec.loader.exec_module(C)
 import render
 
 assert [p.id for p in C.PEOPLE] == ['person_a', 'person_b'], \
@@ -67,6 +74,65 @@ def parse_date_he(s: str) -> date | None:
         try: return datetime.strptime(s, fmt).date()
         except: pass
     return None
+
+# ─── Moneytor source adapter (§4.2) ──────────────────────────────────────────
+_BANK_TYPES = {"CHECKING", "SAVINGS", "BANK"}
+_BANK_CATEGORIES = {"BANK_TRANSFER"}
+
+def _account_kind(raw: dict) -> str:
+    if raw.get("type", "").upper() in _BANK_TYPES or raw.get("category", "") in _BANK_CATEGORIES:
+        return "bank"
+    return "card"
+
+def _derive_bank_kind(merchant: str, signed: float, raw: dict) -> str:
+    """Consolidated bank_kind (was duplicated across the deleted loaders). Tolerance on
+    ALL amount comparisons. Re-tune cheque tokens vs real Moneytor strings at the gate."""
+    desc = f"{merchant} {raw.get('extra_info') or ''}"
+    is_debit = signed < 0
+    amt = abs(signed)
+    def near(a, b): return bool(b) and abs(a - b) < 0.01
+    if is_debit and _has_token(desc, C.LANDLORD_TOKENS) and (near(amt, C.RENT_PER_MONTH_TOTAL) or "שיק" in desc):
+        return "landlord_rent"
+    if "שיק" in desc and "עבר זמ" in desc:
+        return "non_income_credit"
+    if (not is_debit) and _has_token(desc, C.SALARY_KEYWORDS) and amt >= C.SALARY_MIN_AMOUNT:
+        return "salary"
+    if (not is_debit) and near(amt, C.RENTAL_INCOME_AMOUNT):
+        return "rental_income"
+    if _has_token(desc, C.COUPLE_NAME_TOKENS):
+        return "couple_transfer"
+    if _has_token(desc, getattr(C, "SELF_TRANSFER_TOKENS", [])):
+        return "non_income_credit"
+    return "other"
+
+def map_moneytor(raw: dict, owner: str) -> dict | None:
+    ds = str(raw["date"])
+    d = date.fromisoformat(ds[:10]) if ds[:4].isdigit() else parse_date_he(ds)
+    if d is None or not (C.PERIOD_START <= d <= C.PERIOD_END):
+        return None
+    signed = float(raw["amount"])
+    if signed == 0:
+        return None
+    merchant = strip_rtl(raw.get("description") or "")
+    acct = _account_kind(raw)
+    currency = raw.get("currency", "ILS")
+    tx = {
+        "id": raw["id"], "owner": owner,
+        "card": raw.get("accountId", ""),
+        "source": "moneytor", "account_kind": acct,
+        "tx_date": d.isoformat(), "bill_date": d.isoformat(),
+        "merchant": merchant, "category": "",
+        "moneytor_category": raw.get("category", ""), "type": raw.get("type", ""),
+        "amount": abs(signed),
+        "currency": "₪" if currency == "ILS" else currency,
+        "orig_amount": abs(signed), "orig_currency": currency,
+        "sub_type": "credit" if signed > 0 else "debit",
+        "notes": raw.get("extra_info") or "",
+        "foreign": currency != "ILS",
+    }
+    if acct == "bank":
+        tx["bank_kind"] = _derive_bank_kind(merchant, signed, raw)
+    return tx
 
 # ─── Loaders ─────────────────────────────────────────────────────────────────
 
