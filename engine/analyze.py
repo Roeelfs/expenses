@@ -765,7 +765,7 @@ def month_key(iso: str) -> str:
 def main():
     txs = load_all()
     print(f'Loaded {len(txs)} transactions', file=sys.stderr)
-    cls = [classify_deterministic(t) for t in txs]
+    cls = [r for r in (classify_deterministic(t) for t in txs) if r is not None]  # stopgap (Task 8 replaces with store-backed classify_all)
 
     # Write CSV for inspection
     all_fields = sorted({k for t in cls for k in t.keys()})
