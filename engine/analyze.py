@@ -913,22 +913,18 @@ def main():
     vac_total = sum(t['amount'] for t in vacations)
     vac_by_owner = {o: sum(t['amount'] for t in vacations if t['owner']==o) for o in ('person_a','person_b')}
 
-    # Per-car breakdown (vehicle/fuel/insurance etc. by owner)
-    CAR_CATEGORIES = {'תחבורה ורכבים','שירותי רכב','חניונים','עירייה וממשלה','ביטוח'}
-    CAR_TAGS = {'fuel','vehicle','phone'}  # phone shouldn't really be here but tagged similarly
+    # Per-car breakdown (vehicle/fuel by owner)
     cars = {'person_a': [], 'person_b': []}
     for t in cls:
         if t['status'] != 'personal': continue
         if t['tag'] in ('fuel','vehicle'):
-            cars[t['owner']].append(t)
-        elif t['category'] in CAR_CATEGORIES and t['tag'] not in ('phone','gym','subscription'):
             cars[t['owner']].append(t)
     car_totals = {o: sum(t['amount'] for t in cars[o]) for o in cars}
     # Break down by sub-tag
     def car_breakdown(items):
         bd = defaultdict(float)
         for t in items:
-            key = 'Fuel' if t['tag']=='fuel' else 'Vehicle / DMV / Maintenance' if t['tag']=='vehicle' else 'Insurance' if 'ביטוח' in t['category'] else 'Other car'
+            key = 'Fuel' if t['tag']=='fuel' else 'Vehicle / DMV / Maintenance'
             bd[key] += t['amount']
         return dict(bd)
     car_breakdown_r = car_breakdown(cars['person_a'])
