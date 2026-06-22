@@ -646,6 +646,8 @@ def classify_deterministic(tx: dict):
         # most likely incoming salary/payment, route to earnings.
         if kind == 'couple_transfer' and direction == 'debit':
             return {**tx, 'tag': 'couple_transfer', 'status': 'rent' if _has_token(merchant, C.COUPLE_NAME_TOKENS) else 'transfer', 'reason': 'transfer out'}
+        if kind == 'couple_transfer':  # incoming couple transfer (credit) is a settlement, not income
+            return {**tx, 'tag': 'couple_transfer', 'status': 'transfer', 'reason': 'couple transfer in'}
         # All other credits → earnings (salary or other income)
         if direction == 'credit':
             return {**tx, 'tag': 'earnings', 'status': 'earnings', 'reason': 'bank credit'}
@@ -784,9 +786,9 @@ def main():
     rental_incomes = []
     landlord_payments = []  # ₪5,400 checks (Person A paying landlord)
     for t in cls:
-        if t.get('source') in ('leumi-bank', 'discount-bank') and t.get('sub_type') == 'credit':
+        if t.get('account_kind') == 'bank' and t.get('sub_type') == 'credit':
             bank_credits.append(t)
-        elif t.get('source') in ('leumi-bank', 'discount-bank') and t.get('sub_type') == 'debit':
+        elif t.get('account_kind') == 'bank' and t.get('sub_type') == 'debit':
             bank_debits.append(t)
         if t['status'] == 'restaurant':
             restaurants.append(t)

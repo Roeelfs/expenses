@@ -53,7 +53,7 @@ def build_context(config) -> dict:
 def build_input(tx: dict, decided_siblings: list) -> dict:
     return {
         "id": tx["id"], "owner": tx.get("owner"),
-        "merchant": tx.get("merchant", ""), "extra_info": tx.get("extra_info", ""),
+        "merchant": tx.get("merchant", ""), "extra_info": tx.get("notes", ""),
         "amount": tx.get("amount"), "signed_direction": tx.get("sub_type", ""),
         "moneytor_category": tx.get("moneytor_category", ""), "type": tx.get("type", ""),
         "siblings": decided_siblings[:5],

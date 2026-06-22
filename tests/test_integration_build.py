@@ -30,5 +30,12 @@ class IntegrationBuildTest(unittest.TestCase):
         self.assertTrue(any(d["status"] == "earnings" for d in store.values()))
         self.assertTrue(any(d["status"] == "shared" for d in store.values()))
 
+    def test_earnings_section_is_not_zeroed(self):
+        analyze.main()
+        html = (self.out / C.REPORT_NAME).read_text(encoding="utf-8")
+        # the person_a salary credit (12000) must reach the rendered earnings section
+        self.assertTrue(("12,000" in html) or ("12000" in html),
+                        "earnings section appears zeroed — bank credits not aggregated")
+
 if __name__ == "__main__":
     unittest.main()

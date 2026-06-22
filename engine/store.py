@@ -8,8 +8,8 @@ import json, os, hashlib, tempfile
 from datetime import date
 from pathlib import Path
 
-_HASH_FIELDS = ("id", "owner", "date", "amount", "currency", "merchant",
-                "extra_info", "moneytor_category", "type", "accountId", "bank_kind")
+_HASH_FIELDS = ("id", "owner", "tx_date", "amount", "currency", "merchant",
+                "notes", "moneytor_category", "type", "card", "bank_kind")
 
 
 def key(tx: dict) -> str:
