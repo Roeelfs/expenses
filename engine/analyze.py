@@ -512,36 +512,18 @@ LOADERS = {
 
 
 def load_all() -> list[dict]:
-    """Walks config.PEOPLE → their sources → the matching parser."""
+    """Read each person's latest Moneytor snapshot (output/snapshot/<id>.json) and map to normalized tx."""
     txs = []
     for person in C.PEOPLE:
-        base = ROOT / person.data_dir
-        # A Discount account given as both CSV and PDF: CSV wins, PDF fills gaps.
-        # This dedupe set is per-person so each account is independent.
-        discount_seen = set()
-        for src in person.sources:
-            loader = LOADERS.get(src.kind)
-            if loader is None:
-                print(f'WARN: unknown source kind {src.kind!r} for {person.id}', file=sys.stderr)
-                continue
-            files = sorted(glob.glob(str(base / src.glob)))
-            if not files:
-                print(f'WARN: no files matched {person.id}/{src.glob}', file=sys.stderr)
-            for fp in files:
-                rows = loader(Path(fp), person.id, src.account)
-                if src.kind == 'discount_csv':
-                    for t in rows:
-                        key = (t['tx_date'], round(t['amount'], 2), t['merchant'][:30])
-                        if key in discount_seen: continue
-                        discount_seen.add(key); txs.append(t)
-                elif src.kind == 'discount_pdf':
-                    for t in rows:  # approximate dedupe — PDF descriptions are mangled vs CSV
-                        key = (t['tx_date'], round(t['amount'], 2))
-                        if any(k[:2] == key for k in discount_seen): continue
-                        discount_seen.add(key + (t['merchant'][:30],))
-                        txs.append(t)
-                else:
-                    txs += rows
+        path = OUTDIR / 'snapshot' / f'{person.id}.json'
+        if not path.exists():
+            print(f'WARN: no snapshot for {person.id} at {path}', file=sys.stderr)
+            continue
+        raw = json.loads(path.read_text(encoding='utf-8')).get('transactions', [])
+        for r in raw:
+            tx = map_moneytor(r, person.id)
+            if tx is not None:
+                txs.append(tx)
     return txs
 
 # ─── Classification ──────────────────────────────────────────────────────────
@@ -765,9 +747,17 @@ def month_key(iso: str) -> str:
 def main():
     txs = load_all()
     print(f'Loaded {len(txs)} transactions', file=sys.stderr)
-    cls = [r for r in (classify_deterministic(t) for t in txs) if r is not None]  # stopgap (Task 8 replaces with store-backed classify_all)
+    store_path = OUTDIR / 'decisions.json'
+    decisions = _store.load(store_path)
+    queue = []
+    cls = classify_all(txs, decisions, queue, rubric_hash=_cc.rubric_hash(), allow_llm=False)
+    _store.save(store_path, decisions)
+    for t in cls:
+        t['category'] = display_category(t.get('tag', ''))
+    if queue:
+        print(f'{len(queue)} transactions need LLM reasoning — run /refresh', file=sys.stderr)
 
-    # Write CSV for inspection
+    # Debug export only — decisions.json is the source of truth; nothing reads this CSV back.
     all_fields = sorted({k for t in cls for k in t.keys()})
     with open(OUTDIR/'transactions.csv', 'w', encoding='utf-8') as f:
         w = csv.DictWriter(f, fieldnames=all_fields, extrasaction='ignore')
