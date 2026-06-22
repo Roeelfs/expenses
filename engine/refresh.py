@@ -4,8 +4,12 @@ both people (all-or-nothing) -> snapshot -> regex first-pass -> residue queue.
 Token is read from os.environ only (never a CLI arg, never logged).
 """
 from __future__ import annotations
-import argparse, json, os, subprocess, sys
+import argparse, json, os, re, subprocess, sys
 from pathlib import Path
+
+# A real JWT is `eyJ` + a base64url payload — match that shape so prose mentioning
+# "eyJ" (e.g. these docs) does not false-positive the preflight.
+_JWT_RE = re.compile(r"eyJ[A-Za-z0-9_-]{20,}")
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -44,7 +48,7 @@ def preflight(repo_root=ROOT):
         if not p.is_file():
             continue
         try:
-            if "eyJ" in p.read_text(encoding="utf-8", errors="ignore"):
+            if _JWT_RE.search(p.read_text(encoding="utf-8", errors="ignore")):
                 return (False, f"possible JWT/token material in tracked file: {f}")
         except Exception:
             continue
