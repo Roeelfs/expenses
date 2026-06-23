@@ -1,5 +1,7 @@
 # Moneytor PR1 — Local Pivot Implementation Plan
 
+> **STATUS (2026-06-21):** ✅ **Tasks 1–12 DONE & merged to `main`** (`f9adfc4`; 39 tests pass). ⏸️ **Tasks 13–14 PENDING — blocked on the user's two real Moneytor JWTs** in a gitignored `.env`. See the [handoff doc](../2026-06-21-moneytor-handoff.md) for the resume steps.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Replace the file-glob/parser front end of the expense engine with a local Moneytor API ingest + a reason-once classification store, keeping `render.py`'s output identical, and deleting the file parsers only after a real-data feasibility gate.
